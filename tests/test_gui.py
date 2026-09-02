@@ -82,6 +82,48 @@ def main() -> int:
         print("  --   wt.exe unavailable, tab mode fell back to conhost")
         check("fallback is conhost", tab[0], "conhost.exe")
 
+    print("\n[inherited session markers]")
+    import os as _os
+    import subprocess as _sp
+    import tempfile as _tf
+
+    from cc_manager.launcher import INHERITED_SESSION_VARS, clean_env
+
+    saved = {n: _os.environ.get(n) for n in INHERITED_SESSION_VARS}
+    try:
+        # Pretend cc-manager was started from inside a Claude Code session.
+        for name in INHERITED_SESSION_VARS:
+            _os.environ[name] = "poison"
+        _os.environ["CLAUDE_CONFIG_DIR"] = "keep-me"
+
+        env = clean_env()
+        leaked = [n for n in INHERITED_SESSION_VARS if n in env]
+        check("no session markers survive clean_env", leaked, [])
+        check("CLAUDE_CODE_CHILD_SESSION removed",
+              "CLAUDE_CODE_CHILD_SESSION" in env, False)
+        check("user config preserved", env.get("CLAUDE_CONFIG_DIR"), "keep-me")
+        check_true("the rest of the environment is intact", len(env) > 5)
+        check("os.environ itself untouched",
+              _os.environ.get("CLAUDE_CODE_CHILD_SESSION"), "poison")
+
+        # End to end: a really spawned child must not see them either.
+        probe = Path(_tf.gettempdir()) / "ccm_env_test.txt"
+        probe.unlink(missing_ok=True)
+        _sp.Popen(["cmd.exe", "/c",
+                   f'set CLAUDE > "{probe}" 2>&1 || echo NONE > "{probe}"'],
+                  close_fds=True, env=clean_env()).wait(timeout=60)
+        text = probe.read_text(encoding="utf-8", errors="replace") if probe.exists() else ""
+        check("spawned child sees no markers",
+              [n for n in INHERITED_SESSION_VARS if f"{n}=" in text], [])
+        probe.unlink(missing_ok=True)
+    finally:
+        for name, value in saved.items():
+            if value is None:
+                _os.environ.pop(name, None)
+            else:
+                _os.environ[name] = value
+        _os.environ.pop("CLAUDE_CONFIG_DIR", None)
+
     print("\n[settings writer]")
     import json as _json
     import os

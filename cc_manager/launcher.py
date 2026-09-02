@@ -47,6 +47,39 @@ def resume_command(session_id: str, *, fork: bool = False) -> list[str]:
 # launch naming the same window joins it instead of creating a new one.
 WT_WINDOW = "cc-manager"
 
+# Per-session state Claude Code injects into the environment of everything it
+# spawns.  If cc-manager is itself started from inside a Claude Code session,
+# these would be inherited by the session it launches, which then believes it
+# is a child of ours:
+#
+#   CLAUDE_CODE_CHILD_SESSION=1 turns transcript saving OFF -- the new session
+#   runs but records nothing -- and the session id, bridge id and messaging
+#   token would point at the wrong session entirely.
+#
+# All of these are process-scoped markers, never user configuration, so
+# removing them cannot discard anything deliberately set. Variables a user
+# does set (CLAUDE_CONFIG_DIR, ANTHROPIC_API_KEY, ...) are left alone.
+INHERITED_SESSION_VARS = (
+    "CLAUDECODE",
+    "CLAUDE_CODE_CHILD_SESSION",
+    "CLAUDE_CODE_SESSION_ID",
+    "CLAUDE_CODE_BRIDGE_SESSION_ID",
+    "CLAUDE_CODE_ENTRYPOINT",
+    "CLAUDE_CODE_EXECPATH",
+    "CLAUDE_CODE_MESSAGING_SOCKET",
+    "CLAUDE_CODE_MESSAGING_TOKEN",
+    "CLAUDE_PID",
+    "CLAUDE_EFFORT",
+)
+
+
+def clean_env() -> dict[str, str]:
+    """A copy of the environment with another session's markers removed."""
+    env = dict(os.environ)
+    for name in INHERITED_SESSION_VARS:
+        env.pop(name, None)
+    return env
+
 
 def find_wt() -> str | None:
     """Locate Windows Terminal, which is often only an App Execution Alias."""
@@ -114,7 +147,7 @@ def spawn_terminal(meta, *, fork: bool = False, mode: str = "wt"):
         flags = (getattr(subprocess, "DETACHED_PROCESS", 0)
                  | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
     try:
-        subprocess.Popen(cmd, creationflags=flags, close_fds=True)
+        subprocess.Popen(cmd, creationflags=flags, close_fds=True, env=clean_env())
     except OSError as exc:
         raise LauncherError(f"could not open a terminal: {exc}") from exc
     return cmd
@@ -134,7 +167,7 @@ def resume(meta, *, fork: bool = False) -> int:
         workdir = str(Path.cwd())
 
     try:
-        proc = subprocess.run(cmd, cwd=workdir)
+        proc = subprocess.run(cmd, cwd=workdir, env=clean_env())
     except FileNotFoundError as exc:
         raise LauncherError(f"failed to launch {cmd[0]}: {exc}") from exc
     except KeyboardInterrupt:
