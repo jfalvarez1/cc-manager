@@ -76,6 +76,10 @@ class SessionMeta:
     git_branch: str | None = None
     cwd: str | None = None
     version: str | None = None
+    # What the session was actually using, which can differ from the defaults
+    # in settings.json -- a resumed session restores its own recorded mode.
+    model: str | None = None
+    permission_mode: str | None = None
 
     # Set by the scanner: is the session's cwd inside a git work tree at all?
     in_git_repo: bool | None = None
@@ -483,6 +487,13 @@ def read_session(path: Path, project_dir: str | None = None) -> SessionMeta:
             meta.ai_title = str(rec["aiTitle"])
         elif kind == "custom-title" and rec.get("customTitle"):
             meta.custom_title = str(rec["customTitle"])
+        if kind == "permission-mode" and rec.get("permissionMode"):
+            meta.permission_mode = str(rec["permissionMode"])
+        elif kind == "assistant":
+            message = rec.get("message")
+            if isinstance(message, dict) and message.get("model"):
+                meta.model = str(message["model"])
+
         branch = rec.get("gitBranch")
         if isinstance(branch, str) and branch:
             last_branch_any = branch

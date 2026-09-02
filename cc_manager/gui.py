@@ -243,7 +243,7 @@ class CCManagerGUI(tk.Tk):
         self.tree.tag_configure("parked", foreground="#a78bfa")
         self.tree.tag_configure("opening", foreground="#38bdf8")
 
-        self.detail = tk.Text(self, height=4, bg=FIELD, fg=MUTED, bd=0,
+        self.detail = tk.Text(self, height=5, bg=FIELD, fg=MUTED, bd=0,
                               highlightthickness=0, wrap="word",
                               font=("Consolas", 9), padx=12, pady=8)
         self.detail.pack(fill="x", padx=12, pady=(8, 0))
@@ -422,11 +422,22 @@ class CCManagerGUI(tk.Tk):
                 live = ""
             remote = "  ·  ⌁ Remote Control" if meta.remote_control else ""
             bg = "  ·  background job" if meta.is_background else ""
+            # Flag anything not on the configured defaults, rather than
+            # assuming every session inherited them.
+            want_model = str(cc_config.get("model") or "").split("[")[0].lower()
+            model = meta.model or "?"
+            if want_model and want_model not in model.lower():
+                model = f"{model} (not {want_model})"
+            perm = meta.permission_mode or "?"
+            if perm not in ("?", (cc_config.get("permissions") or {}).get(
+                    "defaultMode", "bypassPermissions")):
+                perm = f"{perm} !"
             self.detail.insert("1.0", (
                 f"{meta.summary}\n"
                 f"{meta.session_id}{live}{remote}{bg}\n"
                 f"{format_absolute(meta.last_activity)}   branch {meta.branch}"
-                f"   {format_size(meta.size)}   {meta.cwd or '?'}"
+                f"   {format_size(meta.size)}   {model}   {perm}\n"
+                f"{meta.cwd or '?'}"
             ))
         self.detail.configure(state="disabled")
 

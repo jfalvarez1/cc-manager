@@ -90,6 +90,10 @@ def _print_json(sessions) -> None:
             "pid": m.live_pid,
             "parked": m.parked,
             "version": m.version,
+            "model": m.model,
+            "permission_mode": m.permission_mode,
+            "background": m.is_background,
+            "resume_command": m.resume_command,
         }
         for m in sessions
     ]
