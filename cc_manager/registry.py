@@ -35,6 +35,9 @@ class LiveEntry:
     status: str | None       # idle | busy | shell | ...
     kind: str | None         # interactive | bg | ...
     version: str | None
+    # Present only while the session is connected to Remote Control; it is the
+    # id of the matching session at claude.ai/code.
+    bridge_session_id: str | None
     updated_at: float | None  # epoch seconds
     alive: bool
     path: Path
@@ -124,6 +127,7 @@ def load_live_sessions() -> dict[str, LiveEntry]:
             status=data.get("status"),
             kind=data.get("kind"),
             version=data.get("version"),
+            bridge_session_id=data.get("bridgeSessionId"),
             updated_at=(updated / 1000.0) if isinstance(updated, (int, float)) else None,
             alive=alive,
             path=f,

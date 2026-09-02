@@ -89,6 +89,7 @@ class SessionMeta:
     live_pid: int | None = None
     is_live: bool = False
     stale_registry: bool = False
+    bridge_session_id: str | None = None
 
     # Filled in from cc-manager's own state.
     parked: bool = False
@@ -141,6 +142,17 @@ class SessionMeta:
     @property
     def short_id(self) -> str:
         return self.session_id[:8]
+
+    @property
+    def remote_control(self) -> bool:
+        """Is this session currently connected to Remote Control?"""
+        return bool(self.bridge_session_id)
+
+    @property
+    def remote_url(self) -> str | None:
+        if not self.bridge_session_id:
+            return None
+        return f"https://claude.ai/code/{self.bridge_session_id}"
 
 
 # ---------------------------------------------------------------- text helpers

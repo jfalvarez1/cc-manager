@@ -34,6 +34,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help="treat PATH as the project directory instead of the real CWD")
     p.add_argument("--safe", action="store_true",
                    help="never append title records to transcripts; park in sidecar state only")
+    p.add_argument("-g", "--gui", action="store_true",
+                   help="open the desktop window instead of the terminal UI")
     p.add_argument("-l", "--list", action="store_true",
                    help="print sessions and exit instead of opening the TUI")
     p.add_argument("--json", action="store_true",
@@ -171,6 +173,12 @@ def main(argv: list[str] | None = None) -> int:
             pass
 
     args = build_parser().parse_args(argv)
+
+    # The GUI scans on its own thread, so skip the blocking scan below.
+    if args.gui:
+        from .gui import main as gui_main
+        return gui_main()
+
     sessions = scan(_dirs(args))
 
     if args.json:
