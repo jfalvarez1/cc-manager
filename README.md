@@ -38,41 +38,45 @@ python tests/test_cc_manager.py   # parser, crash detection, park round-trip
 python tests/test_tui.py          # headless UI checks
 ```
 
-## Alias it to `cc-manager`
+## Make `cc-manager` available everywhere
 
-### PowerShell (Windows)
+Put both launchers on your PATH. This is the recommended route: it needs no shell
+profile and works from Windows PowerShell, pwsh 7, `cmd` and git-bash alike.
 
-Open your profile:
+### Windows
 
 ```powershell
-notepad $PROFILE      # create it first if missing: New-Item -ItemType File -Force $PROFILE
+copy "$HOME\.claude\tools\cc-manager\cc-manager.cmd" "$HOME\.local\bin\"
+copy "$HOME\.claude\tools\cc-manager\cc-manager"     "$HOME\.local\bin\"
 ```
 
-Add:
+`%USERPROFILE%\.local\bin` is already on PATH if you installed Claude Code natively.
+Two files, because the shells disagree about what is executable: PowerShell and `cmd`
+resolve `cc-manager.cmd` through `PATHEXT`, while git-bash ignores `PATHEXT` and needs
+an exact, extensionless `cc-manager`. They do not conflict — PowerShell skips the
+extensionless file.
+
+### macOS / Linux
+
+```sh
+ln -s ~/.claude/tools/cc-manager/cc-manager ~/.local/bin/cc-manager
+chmod +x ~/.claude/tools/cc-manager/cc-manager
+```
+
+### Shell profile instead (one shell only)
+
+> **Watch the profile path.** Windows PowerShell 5.1 and PowerShell 7 read *different*
+> profiles — `Documents\WindowsPowerShell\` and `Documents\PowerShell\` respectively.
+> Writing to `$PROFILE` from a pwsh 7 session does nothing for a 5.1 terminal, which is
+> the usual reason `cc-manager` still comes back "not recognized". `$PSVersionTable.PSVersion`
+> tells you which one you are in.
 
 ```powershell
 function cc-manager { & "$HOME\.claude\tools\cc-manager\cc-manager.ps1" @args }
 ```
 
-Reload with `. $PROFILE`. A function is used rather than `Set-Alias` because aliases
-cannot forward arguments.
-
-### bash / zsh / git-bash
-
-Add to `~/.bashrc` or `~/.zshrc`:
-
-```sh
-alias cc-manager='~/.claude/tools/cc-manager/cc-manager'
-```
-
-Reload with `source ~/.bashrc`. If the launcher is not executable:
-`chmod +x ~/.claude/tools/cc-manager/cc-manager`.
-
-### Or put it on your PATH
-
-```sh
-ln -s ~/.claude/tools/cc-manager/cc-manager ~/.local/bin/cc-manager
-```
+A function rather than `Set-Alias`, because aliases cannot forward arguments. For
+bash/zsh, `alias cc-manager='~/.claude/tools/cc-manager/cc-manager'` in `~/.bashrc`.
 
 ## Usage
 
