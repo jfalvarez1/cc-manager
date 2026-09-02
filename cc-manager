@@ -1,0 +1,21 @@
+#!/usr/bin/env sh
+# Launcher for cc-manager (bash / zsh / git-bash).
+# Adds the package directory to PYTHONPATH so cc-manager can live anywhere
+# without being pip-installed, then hands every argument through.
+
+set -e
+
+root=$(cd "$(dirname "$0")" && pwd)
+PYTHONPATH="$root${PYTHONPATH:+:$PYTHONPATH}"
+export PYTHONPATH
+
+python="${CC_MANAGER_PYTHON:-}"
+if [ -z "$python" ]; then
+    if command -v python3 >/dev/null 2>&1; then
+        python=python3
+    else
+        python=python
+    fi
+fi
+
+exec "$python" -m cc_manager "$@"
