@@ -82,6 +82,37 @@ def main() -> int:
         print("  --   wt.exe unavailable, tab mode fell back to conhost")
         check("fallback is conhost", tab[0], "conhost.exe")
 
+    print("\n[background sessions attach, not resume]")
+    bg = SessionMeta(session_id="f872c1d3-1ce3-4435-a1c1-5428336ce2d0",
+                     path=Path("x.jsonl"), project_dir="p", cwd=str(Path.home()),
+                     live_kind="bg", job_id="f872c1d3", is_live=True)
+    check("recognised as background", bg.is_background, True)
+    check("attach is the command", bg.resume_command, "claude attach f872c1d3")
+    # isolated mode quotes every argument into one PowerShell string, so match
+    # against the joined command rather than looking for a bare list element.
+    iso_bg = " ".join(terminal_command(bg, mode="isolated"))
+    check_true("launch uses attach", "attach" in iso_bg)
+    check_true("launch passes the job id", "f872c1d3" in iso_bg)
+    check_true("launch does not use --resume", "--resume" not in iso_bg)
+
+    interactive = SessionMeta(session_id="abcd1234-0000-0000-0000-000000000000",
+                              path=Path("x.jsonl"), project_dir="p",
+                              cwd=str(Path.home()), live_kind="interactive")
+    check("interactive is not background", interactive.is_background, False)
+    check("interactive resumes by id", interactive.resume_command,
+          "claude --resume abcd1234-0000-0000-0000-000000000000")
+    check_true("full command changes directory first",
+               interactive.full_command.startswith('cd "'))
+
+    # A bg job with no job_id cannot be attached, so fall back to --resume.
+    half = SessionMeta(session_id="s", path=Path("x"), project_dir="p",
+                       live_kind="bg", job_id=None)
+    check("bg without a job id falls back", half.is_background, False)
+
+    here = terminal_command(interactive, mode="tab-here")
+    if here[0].endswith("wt.exe"):
+        check("tab-here targets the current window", here[here.index("-w") + 1], "0")
+
     print("\n[inherited session markers]")
     import os as _os
     import subprocess as _sp

@@ -67,6 +67,8 @@ def _merge_registry(sessions: list[SessionMeta]) -> None:
         meta.is_live = entry.alive
         meta.stale_registry = entry.crashed
         meta.bridge_session_id = entry.bridge_session_id
+        meta.live_kind = entry.kind
+        meta.job_id = entry.job_id
 
 
 def _merge_park_state(sessions: list[SessionMeta]) -> None:

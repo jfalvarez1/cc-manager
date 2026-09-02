@@ -90,6 +90,10 @@ class SessionMeta:
     is_live: bool = False
     stale_registry: bool = False
     bridge_session_id: str | None = None
+    # "interactive" or "bg".  A background session is opened with
+    # `claude attach <job_id>`; --resume refuses while it is running.
+    live_kind: str | None = None
+    job_id: str | None = None
 
     # Filled in from cc-manager's own state.
     parked: bool = False
@@ -142,6 +146,30 @@ class SessionMeta:
     @property
     def short_id(self) -> str:
         return self.session_id[:8]
+
+    @property
+    def is_background(self) -> bool:
+        """Running as a `claude --bg` job rather than in a terminal."""
+        return self.live_kind == "bg" and bool(self.job_id)
+
+    @property
+    def resume_command(self) -> str:
+        """The command that opens this session, as you would type it.
+
+        A background job refuses --resume while it is running; Claude Code
+        answers `/resume` on one with "Run claude attach <id> to open it, or
+        claude stop <id> first". So hand back the command that actually works.
+        """
+        if self.is_background:
+            return f"claude attach {self.job_id}"
+        return f"claude --resume {self.session_id}"
+
+    @property
+    def full_command(self) -> str:
+        """Resume command with the directory change in front of it."""
+        if self.cwd:
+            return f'cd "{self.cwd}" ; {self.resume_command}'
+        return self.resume_command
 
     @property
     def remote_control(self) -> bool:

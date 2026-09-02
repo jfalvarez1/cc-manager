@@ -51,7 +51,8 @@ STATE_GLYPH = {
 }
 
 TERMINALS = [
-    ("New tab", "tab"),
+    ("Tab in current window", "tab-here"),
+    ("Tab in cc-manager window", "tab"),
     ("New window", "wt"),
     ("Isolated window", "isolated"),
     ("PowerShell 7", "pwsh"),
@@ -102,7 +103,8 @@ class CCManagerGUI(tk.Tk):
         self.search_var = tk.StringVar()
         self.search_var.trace_add("write", lambda *_: self.refresh_sessions())
         self.show_parked = tk.BooleanVar(value=self.settings.get("show_parked", False))
-        default_term = self.settings.get("terminal") or ("tab" if find_wt() else "isolated")
+        default_term = self.settings.get("terminal") or (
+            "tab-here" if find_wt() else "isolated")
         self.terminal = tk.StringVar(value=default_term)
 
         self._style()
@@ -114,7 +116,13 @@ class CCManagerGUI(tk.Tk):
     # ------------------------------------------------------------ open state
 
     def is_open(self, meta: SessionMeta) -> bool:
-        """Already running, or launched so recently the scan has not seen it."""
+        """Already running, or launched so recently the scan has not seen it.
+
+        A background job is excluded: it runs without a terminal, so attaching
+        to it is always valid and is the only way to see it.
+        """
+        if meta.is_background:
+            return False
         if meta.is_live:
             return True
         started = self.launched.get(meta.session_id)
@@ -240,6 +248,19 @@ class CCManagerGUI(tk.Tk):
                               font=("Consolas", 9), padx=12, pady=8)
         self.detail.pack(fill="x", padx=12, pady=(8, 0))
         self.detail.configure(state="disabled")
+
+        # The exact command for this session, so you can run it in your own
+        # terminal instead of one cc-manager opens for you.
+        cmdbar = ttk.Frame(self, style="Panel.TFrame", padding=(12, 6))
+        cmdbar.pack(fill="x", padx=12, pady=(6, 0))
+        ttk.Button(cmdbar, text="Copy", width=7,
+                   command=lambda: self._copy(self.command_var.get())).pack(side="right")
+        self.command_var = tk.StringVar(value="")
+        cmd_entry = ttk.Entry(cmdbar, textvariable=self.command_var,
+                              font=("Consolas", 9))
+        cmd_entry.pack(side="left", fill="x", expand=True, padx=(0, 8))
+        cmd_entry.bind("<FocusIn>", lambda e: cmd_entry.select_range(0, "end"))
+        self.cmd_entry = cmd_entry
 
         actions = ttk.Frame(self, padding=(12, 8))
         actions.pack(fill="x")
@@ -390,7 +411,9 @@ class CCManagerGUI(tk.Tk):
         self.detail.delete("1.0", "end")
         if meta is None:
             self.detail.insert("1.0", "No session selected.")
+            self.command_var.set("")
         else:
+            self.command_var.set(meta.full_command)
             if meta.is_live:
                 live = f"  ·  open now (pid {meta.live_pid})"
             elif self.is_opening(meta):
@@ -398,9 +421,10 @@ class CCManagerGUI(tk.Tk):
             else:
                 live = ""
             remote = "  ·  ⌁ Remote Control" if meta.remote_control else ""
+            bg = "  ·  background job" if meta.is_background else ""
             self.detail.insert("1.0", (
                 f"{meta.summary}\n"
-                f"{meta.session_id}{live}{remote}\n"
+                f"{meta.session_id}{live}{remote}{bg}\n"
                 f"{format_absolute(meta.last_activity)}   branch {meta.branch}"
                 f"   {format_size(meta.size)}   {meta.cwd or '?'}"
             ))
@@ -408,6 +432,8 @@ class CCManagerGUI(tk.Tk):
 
         if meta is None:
             self.go.configure(state="disabled", text="Open session  ▸")
+        elif meta.is_background:
+            self.go.configure(state="normal", text="Attach  ▸")
         elif self.is_open(meta):
             self.go.configure(state="disabled", text="Already open")
         else:
@@ -466,8 +492,12 @@ class CCManagerGUI(tk.Tk):
                     activebackground=SELECT, activeforeground="#ffffff",
                     bd=0, font=("Segoe UI", 9))
 
-        already = self.is_open(meta)
-        m.add_command(label="Open in new tab", state="disabled" if already else "normal",
+        already = self.is_open(meta) and not meta.is_background
+        m.add_command(label="Open as tab here",
+                      state="disabled" if already else "normal",
+                      command=lambda: self.launch(mode="tab-here"))
+        m.add_command(label="Open in cc-manager window",
+                      state="disabled" if already else "normal",
                       command=lambda: self.launch(mode="tab"))
         m.add_command(label="Open in new window", state="disabled" if already else "normal",
                       command=lambda: self.launch(mode="wt"))
@@ -504,8 +534,9 @@ class CCManagerGUI(tk.Tk):
         m.add_command(label="Copy session id",
                       command=lambda: self._copy(meta.session_id))
         m.add_command(label="Copy resume command",
-                      command=lambda: self._copy(
-                          f"claude --resume {meta.session_id}"))
+                      command=lambda: self._copy(meta.resume_command))
+        m.add_command(label="Copy with cd",
+                      command=lambda: self._copy(meta.full_command))
         m.add_command(label="Copy launch command",
                       command=lambda: self._copy(" ".join(
                           terminal_command(meta, mode=self.terminal.get()))))

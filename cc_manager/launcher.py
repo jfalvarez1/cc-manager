@@ -110,7 +110,7 @@ def clean_env(mode: str | None = None) -> dict[str, str]:
         return env
     for name in INHERITED_SESSION_VARS + TOOL_CONTEXT_VARS:
         env.pop(name, None)
-    if mode in ("tab", "wt") and not env.get("COLORTERM"):
+    if mode in ("tab", "tab-here", "wt") and not env.get("COLORTERM"):
         env["COLORTERM"] = "truecolor"
     return env
 
@@ -149,16 +149,24 @@ def terminal_command(meta, *, fork: bool = False, mode: str = "wt") -> list[str]
     """
     claude = find_claude()
     workdir = meta.cwd if meta.cwd and Path(meta.cwd).is_dir() else str(Path.cwd())
-    args = ["--resume", meta.session_id] + (["--fork-session"] if fork else [])
 
-    if mode in ("tab", "wt"):
+    if meta.is_background:
+        # --resume refuses while the job is running; attach is the way in.
+        args = ["attach", meta.job_id]
+    else:
+        args = ["--resume", meta.session_id] + (["--fork-session"] if fork else [])
+
+    if mode in ("tab", "tab-here", "wt"):
         wt = find_wt()
         if wt:
-            if mode == "tab":
-                # --title keeps the tab readable; -w <name> is what makes this
-                # a tab rather than another window.
+            if mode in ("tab", "tab-here"):
+                # -w is what makes this a tab rather than another window.
+                # "0" means the most recently used window -- normally the one
+                # you are looking at -- while a name gets a dedicated window
+                # that every launch joins.
+                target = "0" if mode == "tab-here" else WT_WINDOW
                 title = (meta.title or meta.short_id)[:40]
-                return [wt, "-w", WT_WINDOW, "new-tab",
+                return [wt, "-w", target, "new-tab",
                         "--title", title, "-d", workdir, claude, *args]
             return [wt, "-d", workdir, claude, *args]
         mode = "isolated"

@@ -34,6 +34,8 @@ class LiveEntry:
     name_source: str | None
     status: str | None       # idle | busy | shell | ...
     kind: str | None         # interactive | bg | ...
+    # Short id a background session is attached by.
+    job_id: str | None
     version: str | None
     # Present only while the session is connected to Remote Control; it is the
     # id of the matching session at claude.ai/code.
@@ -126,6 +128,7 @@ def load_live_sessions() -> dict[str, LiveEntry]:
             name_source=data.get("nameSource"),
             status=data.get("status"),
             kind=data.get("kind"),
+            job_id=data.get("jobId"),
             version=data.get("version"),
             bridge_session_id=data.get("bridgeSessionId"),
             updated_at=(updated / 1000.0) if isinstance(updated, (int, float)) else None,
