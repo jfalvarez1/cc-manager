@@ -96,12 +96,29 @@ def main() -> int:
             _os.environ[name] = "poison"
         _os.environ["CLAUDE_CONFIG_DIR"] = "keep-me"
 
+        _os.environ["NO_COLOR"] = "1"
+        _os.environ["WT_SESSION"] = "stale-terminal-id"
+
         env = clean_env()
         leaked = [n for n in INHERITED_SESSION_VARS if n in env]
         check("no session markers survive clean_env", leaked, [])
         check("CLAUDE_CODE_CHILD_SESSION removed",
               "CLAUDE_CODE_CHILD_SESSION" in env, False)
+        check("NO_COLOR removed", "NO_COLOR" in env, False)
+        check("stale WT_SESSION removed", "WT_SESSION" in env, False)
         check("user config preserved", env.get("CLAUDE_CONFIG_DIR"), "keep-me")
+
+        check("truecolor advertised for a WT tab",
+              clean_env("tab").get("COLORTERM"), "truecolor")
+        check("truecolor advertised for a WT window",
+              clean_env("wt").get("COLORTERM"), "truecolor")
+        check("conhost is not told it has truecolor",
+              clean_env("isolated").get("COLORTERM"), None)
+
+        _os.environ["CC_MANAGER_KEEP_ENV"] = "1"
+        check("escape hatch inherits verbatim",
+              clean_env().get("CLAUDE_CODE_CHILD_SESSION"), "poison")
+        _os.environ.pop("CC_MANAGER_KEEP_ENV", None)
         check_true("the rest of the environment is intact", len(env) > 5)
         check("os.environ itself untouched",
               _os.environ.get("CLAUDE_CODE_CHILD_SESSION"), "poison")
@@ -122,7 +139,8 @@ def main() -> int:
                 _os.environ.pop(name, None)
             else:
                 _os.environ[name] = value
-        _os.environ.pop("CLAUDE_CONFIG_DIR", None)
+        for extra in ("CLAUDE_CONFIG_DIR", "NO_COLOR", "WT_SESSION"):
+            _os.environ.pop(extra, None)
 
     print("\n[settings writer]")
     import json as _json

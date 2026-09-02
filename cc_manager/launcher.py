@@ -72,12 +72,46 @@ INHERITED_SESSION_VARS = (
     "CLAUDE_EFFORT",
 )
 
+# Claude Code also shapes the environment for the *tools* it runs, and those
+# settings are wrong for a real interactive terminal:
+#
+#   NO_COLOR=1 is the no-color.org opt-out. It is set so tool output comes back
+#   as clean text instead of ANSI escapes, but inherited into a new session it
+#   turns off all syntax highlighting and the coloured status text.
+#
+#   WT_SESSION / WT_PROFILE_ID identify the Windows Terminal session we were
+#   launched from. Passing them to a new terminal hands it a stale identity;
+#   the new one should publish its own.
+#
+# Set CC_MANAGER_KEEP_ENV=1 to inherit the environment verbatim instead.
+TOOL_CONTEXT_VARS = (
+    "NO_COLOR",
+    "WT_SESSION",
+    "WT_PROFILE_ID",
+)
 
-def clean_env() -> dict[str, str]:
-    """A copy of the environment with another session's markers removed."""
+
+def clean_env(mode: str | None = None) -> dict[str, str]:
+    """The environment a freshly launched session should start from.
+
+    Removes the markers and tool-context settings Claude Code injects into
+    everything it spawns; leaves deliberate configuration (CLAUDE_CONFIG_DIR,
+    API keys, PATH, ...) untouched.
+
+    For a Windows Terminal launch it also advertises 24-bit colour.  Windows
+    Terminal renders truecolor but does not set ``COLORTERM`` itself -- that is
+    a Unix convention -- so a program checking it sees only basic colour
+    support.  Basic colour is enough for a red/green diff, which is why diffs
+    still look right while richer syntax highlighting falls back to plain text.
+    Not set for conhost, whose colour support is genuinely more limited.
+    """
     env = dict(os.environ)
-    for name in INHERITED_SESSION_VARS:
+    if env.get("CC_MANAGER_KEEP_ENV") == "1":
+        return env
+    for name in INHERITED_SESSION_VARS + TOOL_CONTEXT_VARS:
         env.pop(name, None)
+    if mode in ("tab", "wt") and not env.get("COLORTERM"):
+        env["COLORTERM"] = "truecolor"
     return env
 
 
@@ -147,7 +181,8 @@ def spawn_terminal(meta, *, fork: bool = False, mode: str = "wt"):
         flags = (getattr(subprocess, "DETACHED_PROCESS", 0)
                  | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
     try:
-        subprocess.Popen(cmd, creationflags=flags, close_fds=True, env=clean_env())
+        subprocess.Popen(cmd, creationflags=flags, close_fds=True,
+                         env=clean_env(mode))
     except OSError as exc:
         raise LauncherError(f"could not open a terminal: {exc}") from exc
     return cmd
