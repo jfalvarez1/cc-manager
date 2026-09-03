@@ -39,6 +39,10 @@ def main() -> int:
         "--add-data", f"{ICON}{';' if sys.platform == 'win32' else ':'}.",
         "--paths", str(BASE),
         "--hidden-import", "cc_manager.gui",
+        # pystray picks its backend at import time, so PyInstaller's static
+        # analysis never sees it and the tray silently fails in the bundle.
+        "--hidden-import", "pystray._win32",
+        "--hidden-import", "PIL._tkinter_finder",
         "--distpath", str(DIST),
         "--workpath", str(BASE / "build"),
         "--specpath", str(BASE / "build"),

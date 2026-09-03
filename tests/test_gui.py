@@ -376,6 +376,66 @@ def main() -> int:
         app.search_var.set("")
         app.update()
 
+        print("\n[theme animations]")
+        for tname in THEMES:
+            app.apply_theme(tname)
+            for _ in range(8):
+                app.update()
+                time.sleep(0.01)
+            check_true(f"{tname}: banner draws something",
+                       len(app.banner.find_all()) > 0)
+            check(f"{tname}: banner follows the theme", app.banner.theme, tname)
+
+        app.animated.set(False)
+        app.update()
+        check("animate off clears the canvas", len(app.banner.find_all()), 0)
+        app.animated.set(True)
+        app.update()
+        time.sleep(0.05)
+        app.update()
+        check_true("animate on redraws", len(app.banner.find_all()) > 0)
+
+        # Stepping must survive a teardown mid-frame rather than raising.
+        app.banner._step()
+        check_true("stepping is safe", True)
+
+        print("\n[tray]")
+        from cc_manager.tray import available as tray_available
+
+        if not tray_available():
+            print("  --   pystray unavailable, tray checks skipped")
+        else:
+            check("starts out of the tray", app._tray.visible, False)
+            check("hide_to_tray succeeds", app.hide_to_tray(), True)
+            app.update()
+            time.sleep(1.0)
+            app.update()
+            check("window withdrawn", app.state(), "withdrawn")
+            check("tray icon present", app._tray.visible, True)
+            check("animation paused while hidden", app.banner.enabled, False)
+
+            app.restore_from_tray()
+            app.update()
+            time.sleep(0.3)
+            app.update()
+            check("window restored", app.state(), "normal")
+            check("tray icon removed", app._tray.visible, False)
+            check("animation resumed", app.banner.enabled, True)
+
+            # The X must not quit when close-to-tray is on.
+            app.close_to_tray.set(True)
+            app._on_close()
+            app.update()
+            time.sleep(0.8)
+            app.update()
+            check("close button hid instead of quitting", app.state(), "withdrawn")
+            check("app still alive", app.winfo_exists(), 1)
+            app.restore_from_tray()
+            app.update()
+            app.close_to_tray.set(False)
+            check("close_to_tray persisted",
+                  _gui.load_settings().get("close_to_tray"), False)
+
         print("\n[double-open guard]")
         target = app.rows[0]
         was_live = target.is_live

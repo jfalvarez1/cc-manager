@@ -22,6 +22,8 @@ import webbrowser
 
 from . import config as cc_config
 from . import park as park_mod
+from .banner import ThemeBanner
+from .tray import Tray, available as tray_available
 from .launcher import LauncherError, find_wt, spawn_terminal, terminal_command
 from .parser import EndState, SessionMeta
 from .paths import all_project_dirs, state_dir
@@ -213,10 +215,23 @@ class CCManagerGUI(tk.Tk):
             "tab-here" if find_wt() else "isolated")
         self.terminal = tk.StringVar(value=default_term)
         self.project = self.settings.get("project") or None
+        self.animated = tk.BooleanVar(value=self.settings.get("animated", True))
+        self.animated.trace_add("write", lambda *_: self._toggle_animation())
+        self.close_to_tray = tk.BooleanVar(
+            value=self.settings.get("close_to_tray", False))
+        self.close_to_tray.trace_add("write", lambda *_: self._remember(
+            "close_to_tray", self.close_to_tray.get()))
+        self._tray = Tray(self, icon_path(), on_show=self.restore_from_tray,
+                          on_quit=self.quit_app, on_rescan=self.rescan)
 
         self._style()
         self._build()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
+        # Animate only while this window is the one being looked at.
+        self.bind("<FocusIn>", lambda e: self._set_awake(True))
+        self.bind("<FocusOut>", lambda e: self._set_awake(False))
+        self.bind("<Map>", lambda e: self._set_awake(True))
+        self.bind("<Unmap>", lambda e: self._set_awake(False))
         self.after(50, self._drain)
         self.after(AUTO_REFRESH_MS, self._auto_refresh)
         self.rescan()
@@ -257,9 +272,47 @@ class CCManagerGUI(tk.Tk):
         return saved
 
     def _on_close(self) -> None:
+        """The window's X. Either hides to the tray or really quits."""
+        if self.close_to_tray.get() and tray_available():
+            if self.hide_to_tray():
+                return
+        self.quit_app()
+
+    def _save_window_state(self) -> None:
         try:
-            self._remember("geometry", self.winfo_geometry())
+            if self.state() == "normal":
+                self._remember("geometry", self.winfo_geometry())
             self._remember("project", self.project)
+        except tk.TclError:
+            pass
+
+    def hide_to_tray(self) -> bool:
+        """Withdraw the window into the notification area."""
+        if not self._tray.show():
+            self.status.configure(text="tray unavailable")
+            return False
+        self._save_window_state()
+        # Nothing is on screen, so stop burning frames on the animation.
+        self.banner.set_enabled(False)
+        self.withdraw()
+        return True
+
+    def restore_from_tray(self) -> None:
+        self.deiconify()
+        self.lift()
+        self.focus_force()
+        self._tray.hide()
+        if self.animated.get():
+            self.banner.set_enabled(True)
+        self.rescan()
+
+    def quit_app(self) -> None:
+        try:
+            self._save_window_state()
+            self._tray.hide()
+            banner = getattr(self, "banner", None)
+            if banner is not None:
+                banner.stop()   # cancel the pending after() before teardown
         finally:
             self.destroy()
 
@@ -287,7 +340,20 @@ class CCManagerGUI(tk.Tk):
             self.tree.tag_configure(state, foreground=self.C[state])
         self.tree.tag_configure("parked", foreground=self.C["parked"])
         self.tree.tag_configure("opening", foreground=self.C["opening"])
+        self.banner.set_theme(self.C, self.theme_name)
         self.refresh_sessions()
+
+    def _set_awake(self, awake: bool) -> None:
+        banner = getattr(self, "banner", None)
+        if banner is not None:
+            banner.set_awake(awake)
+
+    def _toggle_animation(self) -> None:
+        on = self.animated.get()
+        self._remember("animated", on)
+        banner = getattr(self, "banner", None)
+        if banner is not None:
+            banner.set_enabled(on)
 
     def _mono(self) -> str:
         return "Consolas" if self.C["font"] != "Consolas" else "Consolas"
@@ -387,6 +453,17 @@ class CCManagerGUI(tk.Tk):
         ttk.Label(bar, text="theme", style="Dim.TLabel").pack(side="right", padx=(16, 6))
         ttk.Checkbutton(bar, text="show parked", variable=self.show_parked,
                         command=self.refresh_sessions).pack(side="right", padx=10)
+        ttk.Checkbutton(bar, text="animate",
+                        variable=self.animated).pack(side="right", padx=(0, 4))
+        if tray_available():
+            ttk.Checkbutton(bar, text="close to tray",
+                            variable=self.close_to_tray).pack(side="right", padx=(0, 4))
+            ttk.Button(bar, text="Hide", width=6,
+                       command=self.hide_to_tray).pack(side="right", padx=(0, 8))
+
+        self.banner = ThemeBanner(self, self.C, self.theme_name,
+                                  enabled=self.animated.get())
+        self.banner.pack(fill="x")
 
         search = ttk.Frame(self, padding=(12, 8, 12, 4))
         search.pack(fill="x")
