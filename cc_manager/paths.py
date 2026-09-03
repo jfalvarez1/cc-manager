@@ -7,9 +7,9 @@ Claude Code stores each CLI session as a ``.jsonl`` transcript under::
 The directory name is the session's working directory with every character
 that is not ``[A-Za-z0-9]`` replaced by ``-``.  For example::
 
-    C:\\Users\\alice                 -> C--Users-alice
-    C:\\Users\\alice\\OneDrive\\Desktop -> C--Users-alice-OneDrive-Desktop
-    /home/me/src/app                -> -home-me-src-app
+    C:\\Users\\alice              -> C--Users-alice
+    C:\\Users\\alice\\src\\app      -> C--Users-alice-src-app
+    /home/alice/src/app          -> -home-alice-src-app
 
 The encoding is lossy (``-`` and ``\\`` and ``:`` all collapse to ``-``), so it
 can be computed but never reliably reversed.  To display a real path we read

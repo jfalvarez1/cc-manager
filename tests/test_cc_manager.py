@@ -109,7 +109,8 @@ def main() -> int:
         check("nested cwd encoding",
               encode_cwd(r"C:\Users\alice\OneDrive\Desktop"),
               "C--Users-alice-OneDrive-Desktop")
-        check("posix cwd encoding", encode_cwd("/home/me/src/app"), "-home-me-src-app")
+        check("posix cwd encoding", encode_cwd("/home/alice/src/app"),
+              "-home-alice-src-app")
         check("spaces and dots",
               encode_cwd(r"G:\Program Files\Snap-on Inc"),
               "G--Program-Files-Snap-on-Inc")

@@ -163,16 +163,16 @@ def main() -> int:
         __import__("shutil").rmtree(cfgdir, ignore_errors=True)
 
     print("\n[background sessions attach, not resume]")
-    bg = SessionMeta(session_id="f872c1d3-1ce3-4435-a1c1-5428336ce2d0",
+    bg = SessionMeta(session_id="beef0001-1111-4222-8333-444455556666",
                      path=Path("x.jsonl"), project_dir="p", cwd=str(Path.home()),
-                     live_kind="bg", job_id="f872c1d3", is_live=True)
+                     live_kind="bg", job_id="beef0001", is_live=True)
     check("recognised as background", bg.is_background, True)
-    check("attach is the command", bg.resume_command, "claude attach f872c1d3")
+    check("attach is the command", bg.resume_command, "claude attach beef0001")
     # isolated mode quotes every argument into one PowerShell string, so match
     # against the joined command rather than looking for a bare list element.
     iso_bg = " ".join(terminal_command(bg, mode="isolated"))
     check_true("launch uses attach", "attach" in iso_bg)
-    check_true("launch passes the job id", "f872c1d3" in iso_bg)
+    check_true("launch passes the job id", "beef0001" in iso_bg)
     check_true("launch does not use --resume", "--resume" not in iso_bg)
 
     interactive = SessionMeta(session_id="abcd1234-0000-0000-0000-000000000000",

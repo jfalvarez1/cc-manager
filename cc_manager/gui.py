@@ -150,7 +150,7 @@ def claim_taskbar_identity() -> None:
         import ctypes
 
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
-            "alice.cc-manager.sessions")
+            "cc-manager.sessions")
     except Exception:
         pass
 

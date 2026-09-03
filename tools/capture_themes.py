@@ -1,11 +1,17 @@
 """Capture a screenshot of the window in every theme.
 
-    python tools/capture_themes.py
+    python tools/capture_themes.py            # synthetic sessions (default)
+    python tools/capture_themes.py --real     # your own sessions
 
-Writes docs/<theme>.png. Grabs the real window rather than mocking one, so the
-shots stay honest about what the app actually looks like -- including the
-animated banner, which is given a moment to run before each capture.
+Writes docs/<theme>.png. It grabs the real window rather than mocking one, so
+the shots stay honest about what the app looks like -- including the animated
+banner, which is given a moment to run before each capture.
+
+The sessions in it are fabricated by default. Real ones would put working
+directories, project names, session ids and the first line of every prompt into
+a public README.
 """
+import shutil
 import sys
 import time
 from pathlib import Path
@@ -15,13 +21,22 @@ sys.path.insert(0, str(BASE))
 
 from PIL import ImageGrab  # noqa: E402
 
-from cc_manager.gui import THEMES, CCManagerGUI  # noqa: E402
+from tools.demo_store import build_demo_store, fake_liveness  # noqa: E402
 
 OUT = BASE / "docs"
 OUT.mkdir(exist_ok=True)
 
 
 def main() -> int:
+    demo_root = None
+    if "--real" not in sys.argv:
+        demo_root = build_demo_store()      # sets CLAUDE_CONFIG_DIR
+        fake_liveness()
+        print(f"using a synthetic store at {demo_root}")
+
+    # Imported after the store is in place so paths resolve to it.
+    from cc_manager.gui import THEMES, CCManagerGUI
+
     app = CCManagerGUI()
     app.animated.set(True)
     app.geometry("1180x680+120+90")
@@ -58,6 +73,8 @@ def main() -> int:
 
     app.attributes("-topmost", False)
     app.quit_app()
+    if demo_root is not None:
+        shutil.rmtree(demo_root, ignore_errors=True)
     return 0
 
 
