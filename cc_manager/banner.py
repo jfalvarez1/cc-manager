@@ -331,12 +331,14 @@ class ThemeBanner(tk.Canvas):
     # ------------------------------------------------------- retro scanlines
 
     def _build_retro(self, w, h):
+        # 0.88 toward the background left these effectively invisible against
+        # near-black; the strip just looked empty.
         for y in range(0, h, 3):
             self.create_line(0, y, w, y,
-                             fill=_mix(self.C["accent"], self.C["bg"], 0.88))
-        self._items = [self.create_rectangle(0, 0, w, 10, outline="",
+                             fill=_mix(self.C["accent"], self.C["bg"], 0.72))
+        self._items = [self.create_rectangle(0, 0, w, 12, outline="",
                                              fill=_mix(self.C["accent"],
-                                                       self.C["bg"], 0.80))]
+                                                       self.C["bg"], 0.45))]
         self._state = [[-20.0]]
 
     def _step_retro(self, w, h):

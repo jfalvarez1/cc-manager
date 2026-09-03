@@ -15,7 +15,7 @@ import sys
 import threading
 import tkinter as tk
 from pathlib import Path
-from tkinter import messagebox, simpledialog, ttk
+from tkinter import messagebox, ttk
 
 import time
 import webbrowser
@@ -345,7 +345,61 @@ class CCManagerGUI(tk.Tk):
         self.tree.tag_configure("parked", foreground=self.C["parked"])
         self.tree.tag_configure("opening", foreground=self.C["opening"])
         self.banner.set_theme(self.C, self.theme_name)
+        # Keep the picker in step when the theme is set from anywhere other
+        # than the picker itself.
+        box = getattr(self, "theme_box", None)
+        if box is not None and box.get() != self.C["label"]:
+            box.set(self.C["label"])
         self.refresh_sessions()
+
+    def ask_text(self, title: str, prompt: str, initial: str = "") -> str | None:
+        """A themed replacement for simpledialog.askstring.
+
+        tkinter's own dialog is a plain Toplevel with system colours, which is
+        a white box in the middle of a dark theme.
+        """
+        win = tk.Toplevel(self)
+        win.title(title)
+        win.configure(bg=self.C["panel"], padx=16, pady=14)
+        win.resizable(False, False)
+        win.transient(self)
+        ico = icon_path()
+        if ico:
+            try:
+                win.iconbitmap(str(ico))
+            except tk.TclError:
+                pass
+
+        result: dict[str, str | None] = {"value": None}
+
+        tk.Label(win, text=prompt, bg=self.C["panel"], fg=self.C["text"],
+                 font=(self.C["font"], 10)).pack(anchor="w")
+        var = tk.StringVar(value=initial)
+        entry = ttk.Entry(win, textvariable=var, width=46,
+                          font=(self._mono(), 9))
+        entry.pack(fill="x", pady=(8, 12))
+        entry.select_range(0, "end")
+
+        def ok(*_):
+            result["value"] = var.get()
+            win.destroy()
+
+        row = ttk.Frame(win, style="Panel.TFrame")
+        row.pack(fill="x")
+        ttk.Button(row, text="Cancel", command=win.destroy).pack(side="right")
+        ttk.Button(row, text="OK", style="Go.TButton",
+                   command=ok).pack(side="right", padx=(0, 8))
+        entry.bind("<Return>", ok)
+        win.bind("<Escape>", lambda e: win.destroy())
+
+        win.update_idletasks()
+        win.geometry("+%d+%d" % (
+            self.winfo_rootx() + (self.winfo_width() - win.winfo_width()) // 2,
+            self.winfo_rooty() + 140))
+        entry.focus_set()
+        win.grab_set()
+        self.wait_window(win)
+        return result["value"]
 
     def _set_awake(self, awake: bool) -> None:
         banner = getattr(self, "banner", None)
@@ -415,20 +469,73 @@ class CCManagerGUI(tk.Tk):
                     font=(self.C["font"], 9, "bold"))
         s.map("Go.TButton", background=[("active", self.C["select"])],
               foreground=[("active", self.C["text"])])
-        s.configure("TEntry", fieldbackground=self.C["field"], foreground=self.C["text"],
-                    insertcolor=self.C["text"], padding=6)
-        s.configure("TCheckbutton", background=self.C["bg"], foreground=self.C["muted"])
-        s.map("TCheckbutton", background=[("active", self.C["bg"])])
-        s.configure("TCombobox", fieldbackground=self.C["field"], foreground=self.C["text"],
-                    background=self.C["panel"], arrowcolor=self.C["muted"], padding=4)
+        # clam draws its own 3-D edges from these, and they default to near
+        # white. Left alone, every entry, combobox and scrollbar keeps a bright
+        # border and trough that is glaring on the dark themes.
+        edge = {"bordercolor": self.C["line"], "lightcolor": self.C["line"],
+                "darkcolor": self.C["line"]}
+
+        s.configure("TEntry", fieldbackground=self.C["field"],
+                    foreground=self.C["text"], insertcolor=self.C["text"],
+                    padding=6, **edge)
+        s.map("TEntry", fieldbackground=[("readonly", self.C["field"])],
+              foreground=[("readonly", self.C["text"])],
+              bordercolor=[("focus", self.C["accent"])],
+              lightcolor=[("focus", self.C["accent"])])
+
+        s.configure("TCheckbutton", background=self.C["bg"],
+                    foreground=self.C["muted"],
+                    indicatorcolor=self.C["field"], **edge)
+        s.map("TCheckbutton",
+              background=[("active", self.C["bg"])],
+              indicatorcolor=[("selected", self.C["accent"])],
+              foreground=[("active", self.C["text"])])
+
+        s.configure("TCombobox", fieldbackground=self.C["field"],
+                    foreground=self.C["text"], background=self.C["panel"],
+                    arrowcolor=self.C["muted"], padding=4, **edge)
+        s.map("TCombobox",
+              fieldbackground=[("readonly", self.C["field"]),
+                               ("disabled", self.C["panel"])],
+              foreground=[("readonly", self.C["text"])],
+              selectbackground=[("readonly", self.C["field"])],
+              selectforeground=[("readonly", self.C["text"])],
+              arrowcolor=[("active", self.C["accent"])])
+
+        # The dropdown itself is a classic Tk Listbox that ttk never touches,
+        # so it stays white-on-black unless told otherwise. It is created when
+        # first opened, hence the option database rather than a direct config.
+        for opt, value in (("background", self.C["field"]),
+                           ("foreground", self.C["text"]),
+                           ("selectBackground", self.C["select"]),
+                           ("selectForeground", self.C["text"])):
+            self.option_add(f"*TCombobox*Listbox.{opt}", value)
+
+        # Scrollbars: the trough is the part that reads as a white stripe.
+        for orient in ("Vertical.TScrollbar", "Horizontal.TScrollbar"):
+            s.configure(orient, background=self.C["panel"],
+                        troughcolor=self.C["bg"], arrowcolor=self.C["muted"],
+                        gripcount=0, **edge)
+            s.map(orient,
+                  background=[("active", self.C["select"]),
+                              ("pressed", self.C["accent"])])
+
+        s.configure("TPanedwindow", background=self.C["bg"])
+        s.configure("Sash", sashthickness=6, gripcount=0,
+                    background=self.C["bg"], bordercolor=self.C["bg"],
+                    lightcolor=self.C["line"], darkcolor=self.C["line"])
         s.configure("Treeview", background=self.C["bg"], fieldbackground=self.C["bg"],
-                    foreground=self.C["text"], rowheight=26, borderwidth=0)
+                    foreground=self.C["text"], rowheight=26, borderwidth=0,
+                    relief="flat", **edge)
         s.configure("Treeview.Heading", background=self.C["panel"],
                     foreground=self.C["accent"],
-                    relief="flat", padding=6)
-        s.map("Treeview.Heading", background=[("active", self.C["panel"])])
+                    relief="flat", padding=6, **edge)
+        s.map("Treeview.Heading", background=[("active", self.C["select"])])
+        # Selected-row text must contrast with the selection colour, which on
+        # the light theme is pale - white on it was unreadable.
+        sel_fg = "#ffffff" if luminance(self.C["select"]) < 0.4 else self.C["text"]
         s.map("Treeview", background=[("selected", self.C["select"])],
-              foreground=[("selected", "#ffffff")])
+              foreground=[("selected", sel_fg)])
 
     # ----------------------------------------------------------------- layout
 
@@ -454,6 +561,7 @@ class CCManagerGUI(tk.Tk):
         theme_box.set(self.C["label"])
         theme_box.bind("<<ComboboxSelected>>", lambda e: self._pick_theme(theme_box.get()))
         theme_box.pack(side="right", padx=(0, 12))
+        self.theme_box = theme_box
         ttk.Label(bar, text="theme", style="Dim.TLabel").pack(side="right", padx=(16, 6))
         ttk.Checkbutton(bar, text="show parked", variable=self.show_parked,
                         command=self.refresh_sessions).pack(side="right", padx=10)
@@ -471,10 +579,14 @@ class CCManagerGUI(tk.Tk):
 
         search = ttk.Frame(self, padding=(12, 8, 12, 4))
         search.pack(fill="x")
+        # A label rather than placeholder text in the entry: real placeholder
+        # text has to live in the same variable the filter reads, and the
+        # earlier attempt only recoloured the entry without ever showing a hint.
+        ttk.Label(search, text="Search", style="Muted.TLabel").pack(side="left",
+                                                                    padx=(0, 8))
         entry = ttk.Entry(search, textvariable=self.search_var)
-        entry.pack(fill="x")
-        entry.insert(0, "")
-        self._placeholder(entry, "search  (title, prompt, branch, id)")
+        entry.pack(side="left", fill="x", expand=True)
+        self.search_entry = entry
 
         panes = ttk.PanedWindow(self, orient="horizontal")
         panes.pack(fill="both", expand=True, padx=12, pady=(4, 0))
@@ -546,19 +658,6 @@ class CCManagerGUI(tk.Tk):
             ttk.Button(actions, text=text, command=fn).pack(side="left", padx=(8, 0))
         self.status = ttk.Label(actions, text="", style="Muted.TLabel")
         self.status.pack(side="right")
-
-    def _placeholder(self, entry: ttk.Entry, text: str) -> None:
-        def on_in(_):
-            if not self.search_var.get():
-                entry.configure(foreground=self.C["text"])
-
-        def on_out(_):
-            if not self.search_var.get():
-                entry.configure(foreground=self.C["dim"])
-
-        entry.configure(foreground=self.C["dim"])
-        entry.bind("<FocusIn>", on_in)
-        entry.bind("<FocusOut>", on_out)
 
     def _pick_theme(self, label: str) -> None:
         for key, theme in THEMES.items():
@@ -860,9 +959,9 @@ class CCManagerGUI(tk.Tk):
             if meta.parked:
                 park_mod.unpark(meta)
             else:
-                note = simpledialog.askstring(
-                    "Park session", "Park as:", parent=self,
-                    initialvalue=park_mod.slugify(meta.title, meta.short_id))
+                note = self.ask_text(
+                    "Park session", "Park as:",
+                    park_mod.slugify(meta.title, meta.short_id))
                 if note is None:
                     return
                 park_mod.park(meta, note)
@@ -875,8 +974,7 @@ class CCManagerGUI(tk.Tk):
         meta = self.current()
         if meta is None:
             return
-        title = simpledialog.askstring("Rename session", "New title:",
-                                       parent=self, initialvalue=meta.title)
+        title = self.ask_text("Rename session", "New title:", meta.title)
         if not title:
             return
         try:
