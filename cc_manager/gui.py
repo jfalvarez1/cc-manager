@@ -28,23 +28,78 @@ from .paths import all_project_dirs, state_dir
 from .scanner import scan
 from .util import format_absolute, format_relative, format_size
 
-# --- palette -----------------------------------------------------------------
-BG = "#0b0f14"
-PANEL = "#111827"
-FIELD = "#0f172a"
-LINE = "#1f2937"
-TEXT = "#e5e7eb"
-MUTED = "#9ca3af"
-DIM = "#6b7280"
-ACCENT = "#3b82f6"
-SELECT = "#1f3a5f"
-
-STATE_COLOR = {
-    EndState.LIVE: "#4ade80",
-    EndState.CRASHED: "#f87171",
-    EndState.INTERRUPTED: "#fbbf24",
-    EndState.CLEAN: "#9ca3af",
+# --- themes ------------------------------------------------------------------
+# Surface hues follow the chiptune tracker's own themes so the two apps agree,
+# and every palette is contrast-checked rather than eyeballed -- that project
+# audits its themes for a 4.5:1 text ratio, and a palette that looks right in
+# a mockup can still be unreadable in place. tests/test_gui.py enforces it.
+THEMES: dict[str, dict[str, str]] = {
+    "midnight": {
+        "label": "Midnight",
+        "bg": "#0b0f14", "panel": "#111827", "field": "#0f172a",
+        "text": "#e5e7eb", "muted": "#9ca3af", "dim": "#6b7280",
+        "accent": "#3b82f6", "select": "#1f3a5f", "line": "#1f2937",
+        "live": "#4ade80", "crashed": "#f87171", "interrupted": "#fbbf24",
+        "clean": "#9ca3af", "parked": "#a78bfa", "opening": "#38bdf8",
+        "font": "Segoe UI",
+    },
+    "matrix": {
+        "label": "Matrix",
+        "bg": "#08100a", "panel": "#0e1910", "field": "#050b07",
+        "text": "#00ff41", "muted": "#00c633", "dim": "#00902f",
+        "accent": "#00ff41", "select": "#0d3a18", "line": "#124a1e",
+        "live": "#7cff5a", "crashed": "#ff6b60", "interrupted": "#e8ff36",
+        "clean": "#00c633", "parked": "#3ae8c8", "opening": "#9dff8a",
+        "font": "Consolas",
+    },
+    "synthwave": {
+        "label": "Synthwave",
+        "bg": "#0e0818", "panel": "#1b0e2a", "field": "#0a0512",
+        "text": "#f4e9ff", "muted": "#c39dff", "dim": "#9878cf",
+        "accent": "#ff2d95", "select": "#3d1a63", "line": "#2f1a4a",
+        "live": "#00e5ff", "crashed": "#ff5fa8", "interrupted": "#ffb038",
+        "clean": "#c39dff", "parked": "#c86bff", "opening": "#5ef0ff",
+        "font": "Segoe UI",
+    },
+    "retro": {
+        "label": "Retro Terminal",
+        "bg": "#050500", "panel": "#140f00", "field": "#0a0800",
+        "text": "#ffb000", "muted": "#d99500", "dim": "#a87400",
+        "accent": "#ffb000", "select": "#3a2600", "line": "#4a3100",
+        "live": "#ffd45e", "crashed": "#ff8a5c", "interrupted": "#ffe066",
+        "clean": "#d99500", "parked": "#e8a55e", "opening": "#ffcf80",
+        "font": "Consolas",
+    },
+    "aero": {
+        "label": "Frutiger Aero",
+        "bg": "#e0edf8", "panel": "#c9dff2", "field": "#f2f8fd",
+        "text": "#0b2740", "muted": "#27506d", "dim": "#3d6b8a",
+        "accent": "#0a6ea8", "select": "#a8d4ef", "line": "#9dc4e0",
+        "live": "#0f6b2e", "crashed": "#a3201a", "interrupted": "#7a4f00",
+        "clean": "#27506d", "parked": "#5b34a0", "opening": "#0a5f8f",
+        "font": "Segoe UI",
+    },
 }
+DEFAULT_THEME = "midnight"
+
+
+def _srgb(channel: float) -> float:
+    return channel / 12.92 if channel <= 0.04045 else ((channel + 0.055) / 1.055) ** 2.4
+
+
+def luminance(hex_colour: str) -> float:
+    h = hex_colour.lstrip("#")
+    r, g, b = (int(h[i:i + 2], 16) / 255 for i in (0, 2, 4))
+    return 0.2126 * _srgb(r) + 0.7152 * _srgb(g) + 0.0722 * _srgb(b)
+
+
+def contrast(a: str, b: str) -> float:
+    """WCAG contrast ratio between two hex colours."""
+    la, lb = luminance(a), luminance(b)
+    hi, lo = max(la, lb), min(la, lb)
+    return (hi + 0.05) / (lo + 0.05)
+
+
 STATE_GLYPH = {
     EndState.LIVE: "● live",
     EndState.CRASHED: "⚠ crashed",
@@ -119,10 +174,16 @@ def save_settings(data: dict) -> None:
 class CCManagerGUI(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
+        # Settings and palette first: everything below paints with self.C.
+        self.settings = load_settings()
+        theme = self.settings.get("theme")
+        self.theme_name = theme if theme in THEMES else DEFAULT_THEME
+        self.C = THEMES[self.theme_name]
+
         self.title("cc-manager — Claude Code sessions")
-        self.geometry("1180x680")
         self.minsize(900, 480)
-        self.configure(bg=BG)
+        self.geometry(self._restore_geometry())
+        self.configure(bg=self.C["bg"])
 
         ico = icon_path()
         if ico:
@@ -131,7 +192,6 @@ class CCManagerGUI(tk.Tk):
             except tk.TclError:
                 pass
 
-        self.settings = load_settings()
         self.sessions: list[SessionMeta] = []
         self._scanning = False
         self.project: str | None = None       # None == all projects
@@ -144,15 +204,93 @@ class CCManagerGUI(tk.Tk):
         self.search_var = tk.StringVar()
         self.search_var.trace_add("write", lambda *_: self.refresh_sessions())
         self.show_parked = tk.BooleanVar(value=self.settings.get("show_parked", False))
+        # Persist it: this used to be read at startup but never written back,
+        # so the checkbox silently reset on every launch.
+        self.show_parked.trace_add("write", lambda *_: self._remember(
+            "show_parked", self.show_parked.get()))
+
         default_term = self.settings.get("terminal") or (
             "tab-here" if find_wt() else "isolated")
         self.terminal = tk.StringVar(value=default_term)
+        self.project = self.settings.get("project") or None
 
         self._style()
         self._build()
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
         self.after(50, self._drain)
         self.after(AUTO_REFRESH_MS, self._auto_refresh)
         self.rescan()
+
+    # ---------------------------------------------------------------- settings
+
+    def _remember(self, key: str, value) -> None:
+        if self.settings.get(key) != value:
+            self.settings[key] = value
+            save_settings(self.settings)
+
+    def _restore_geometry(self) -> str:
+        """Reuse the last window size and position, if it is still on screen.
+
+        A saved position from a monitor that is no longer attached would put
+        the window somewhere unreachable, so anything off the current desktop
+        falls back to a centred default.
+        """
+        saved = self.settings.get("geometry")
+        default = "1180x680"
+        if not isinstance(saved, str) or "x" not in saved:
+            return default
+        try:
+            size, _, pos = saved.partition("+")
+            w, h = (int(v) for v in size.split("x"))
+        except ValueError:
+            return default
+        if not (600 <= w <= 10000 and 400 <= h <= 10000):
+            return default
+        if pos:
+            try:
+                x, y = (int(v) for v in pos.split("+"))
+            except ValueError:
+                return f"{w}x{h}"
+            if not (-50 <= x <= self.winfo_screenwidth() - 200
+                    and -50 <= y <= self.winfo_screenheight() - 150):
+                return f"{w}x{h}"
+        return saved
+
+    def _on_close(self) -> None:
+        try:
+            self._remember("geometry", self.winfo_geometry())
+            self._remember("project", self.project)
+        finally:
+            self.destroy()
+
+    # ------------------------------------------------------------------ themes
+
+    def apply_theme(self, name: str) -> None:
+        """Switch palette and repaint. ttk styles alone are not enough --
+        the classic tk widgets (Listbox, Text, Menu) carry their own colours."""
+        if name not in THEMES:
+            return
+        self.theme_name = name
+        self.C = THEMES[name]
+        self._remember("theme", name)
+
+        self.configure(bg=self.C["bg"])
+        self._style()
+        self.projects.configure(
+            bg=self.C["bg"], fg=self.C["text"],
+            selectbackground=self.C["select"], selectforeground=self.C["text"],
+            font=(self.C["font"], 9))
+        self.detail.configure(bg=self.C["field"], fg=self.C["muted"])
+        self.cmd_entry.configure(font=(self._mono(), 9))
+        for state in (EndState.LIVE, EndState.CRASHED,
+                      EndState.INTERRUPTED, EndState.CLEAN):
+            self.tree.tag_configure(state, foreground=self.C[state])
+        self.tree.tag_configure("parked", foreground=self.C["parked"])
+        self.tree.tag_configure("opening", foreground=self.C["opening"])
+        self.refresh_sessions()
+
+    def _mono(self) -> str:
+        return "Consolas" if self.C["font"] != "Consolas" else "Consolas"
 
     # ------------------------------------------------------------ open state
 
@@ -187,35 +325,39 @@ class CCManagerGUI(tk.Tk):
             s.theme_use("clam")
         except tk.TclError:
             pass
-        s.configure(".", background=BG, foreground=TEXT,
-                    fieldbackground=FIELD, borderwidth=0)
-        s.configure("TFrame", background=BG)
-        s.configure("Panel.TFrame", background=PANEL)
-        s.configure("TLabel", background=BG, foreground=TEXT)
-        s.configure("Muted.TLabel", background=BG, foreground=MUTED)
-        s.configure("Dim.TLabel", background=PANEL, foreground=DIM)
-        s.configure("Head.TLabel", background=PANEL, foreground="#93c5fd",
-                    font=("Segoe UI", 10, "bold"))
-        s.configure("TButton", background=PANEL, foreground=TEXT,
+        s.configure(".", background=self.C["bg"], foreground=self.C["text"],
+                    fieldbackground=self.C["field"], borderwidth=0)
+        s.configure("TFrame", background=self.C["bg"])
+        s.configure("Panel.TFrame", background=self.C["panel"])
+        s.configure("TLabel", background=self.C["bg"], foreground=self.C["text"])
+        s.configure("Muted.TLabel", background=self.C["bg"], foreground=self.C["muted"])
+        s.configure("Dim.TLabel", background=self.C["panel"], foreground=self.C["dim"])
+        s.configure("Head.TLabel", background=self.C["panel"],
+                    foreground=self.C["accent"],
+                    font=(self.C["font"], 10, "bold"))
+        s.configure("TButton", background=self.C["panel"], foreground=self.C["text"],
                     padding=(10, 5), relief="flat")
         s.map("TButton",
-              background=[("active", SELECT), ("disabled", PANEL)],
-              foreground=[("disabled", DIM)])
-        s.configure("Go.TButton", background=ACCENT, foreground="#ffffff",
-                    font=("Segoe UI", 9, "bold"))
-        s.map("Go.TButton", background=[("active", "#2563eb")])
-        s.configure("TEntry", fieldbackground=FIELD, foreground=TEXT,
-                    insertcolor=TEXT, padding=6)
-        s.configure("TCheckbutton", background=BG, foreground=MUTED)
-        s.map("TCheckbutton", background=[("active", BG)])
-        s.configure("TCombobox", fieldbackground=FIELD, foreground=TEXT,
-                    background=PANEL, arrowcolor=MUTED, padding=4)
-        s.configure("Treeview", background=BG, fieldbackground=BG,
-                    foreground=TEXT, rowheight=26, borderwidth=0)
-        s.configure("Treeview.Heading", background=PANEL, foreground="#93c5fd",
+              background=[("active", self.C["select"]), ("disabled", self.C["panel"])],
+              foreground=[("disabled", self.C["dim"])])
+        go_fg = "#ffffff" if luminance(self.C["accent"]) < 0.4 else "#08111c"
+        s.configure("Go.TButton", background=self.C["accent"], foreground=go_fg,
+                    font=(self.C["font"], 9, "bold"))
+        s.map("Go.TButton", background=[("active", self.C["select"])],
+              foreground=[("active", self.C["text"])])
+        s.configure("TEntry", fieldbackground=self.C["field"], foreground=self.C["text"],
+                    insertcolor=self.C["text"], padding=6)
+        s.configure("TCheckbutton", background=self.C["bg"], foreground=self.C["muted"])
+        s.map("TCheckbutton", background=[("active", self.C["bg"])])
+        s.configure("TCombobox", fieldbackground=self.C["field"], foreground=self.C["text"],
+                    background=self.C["panel"], arrowcolor=self.C["muted"], padding=4)
+        s.configure("Treeview", background=self.C["bg"], fieldbackground=self.C["bg"],
+                    foreground=self.C["text"], rowheight=26, borderwidth=0)
+        s.configure("Treeview.Heading", background=self.C["panel"],
+                    foreground=self.C["accent"],
                     relief="flat", padding=6)
-        s.map("Treeview.Heading", background=[("active", PANEL)])
-        s.map("Treeview", background=[("selected", SELECT)],
+        s.map("Treeview.Heading", background=[("active", self.C["panel"])])
+        s.map("Treeview", background=[("selected", self.C["select"])],
               foreground=[("selected", "#ffffff")])
 
     # ----------------------------------------------------------------- layout
@@ -236,6 +378,13 @@ class CCManagerGUI(tk.Tk):
         combo.pack(side="left")
 
         ttk.Button(bar, text="Rescan", command=self.rescan).pack(side="right")
+
+        theme_box = ttk.Combobox(bar, width=15, state="readonly",
+                                 values=[t["label"] for t in THEMES.values()])
+        theme_box.set(self.C["label"])
+        theme_box.bind("<<ComboboxSelected>>", lambda e: self._pick_theme(theme_box.get()))
+        theme_box.pack(side="right", padx=(0, 12))
+        ttk.Label(bar, text="theme", style="Dim.TLabel").pack(side="right", padx=(16, 6))
         ttk.Checkbutton(bar, text="show parked", variable=self.show_parked,
                         command=self.refresh_sessions).pack(side="right", padx=10)
 
@@ -252,7 +401,7 @@ class CCManagerGUI(tk.Tk):
         left = ttk.Frame(panes)
         panes.add(left, weight=1)
         self.projects = tk.Listbox(
-            left, bg=BG, fg=TEXT, selectbackground=SELECT, selectforeground="#fff",
+            left, bg=self.C["bg"], fg=self.C["text"], selectbackground=self.C["select"], selectforeground="#fff",
             highlightthickness=0, borderwidth=0, activestyle="none",
             font=("Segoe UI", 9),
         )
@@ -279,12 +428,13 @@ class CCManagerGUI(tk.Tk):
         self.tree.bind("<Double-1>", lambda e: self.launch())
         self.tree.bind("<Return>", lambda e: self.launch())
         self.tree.bind("<Button-3>", self._popup)
-        for state, color in STATE_COLOR.items():
-            self.tree.tag_configure(state, foreground=color)
-        self.tree.tag_configure("parked", foreground="#a78bfa")
-        self.tree.tag_configure("opening", foreground="#38bdf8")
+        for state in (EndState.LIVE, EndState.CRASHED,
+                      EndState.INTERRUPTED, EndState.CLEAN):
+            self.tree.tag_configure(state, foreground=self.C[state])
+        self.tree.tag_configure("parked", foreground=self.C["parked"])
+        self.tree.tag_configure("opening", foreground=self.C["opening"])
 
-        self.detail = tk.Text(self, height=5, bg=FIELD, fg=MUTED, bd=0,
+        self.detail = tk.Text(self, height=5, bg=self.C["field"], fg=self.C["muted"], bd=0,
                               highlightthickness=0, wrap="word",
                               font=("Consolas", 9), padx=12, pady=8)
         self.detail.pack(fill="x", padx=12, pady=(8, 0))
@@ -319,21 +469,27 @@ class CCManagerGUI(tk.Tk):
     def _placeholder(self, entry: ttk.Entry, text: str) -> None:
         def on_in(_):
             if not self.search_var.get():
-                entry.configure(foreground=TEXT)
+                entry.configure(foreground=self.C["text"])
 
         def on_out(_):
             if not self.search_var.get():
-                entry.configure(foreground=DIM)
+                entry.configure(foreground=self.C["dim"])
 
-        entry.configure(foreground=DIM)
+        entry.configure(foreground=self.C["dim"])
         entry.bind("<FocusIn>", on_in)
         entry.bind("<FocusOut>", on_out)
+
+    def _pick_theme(self, label: str) -> None:
+        for key, theme in THEMES.items():
+            if theme["label"] == label:
+                self.apply_theme(key)
+                self.status.configure(text=f"theme: {label}")
+                return
 
     def _set_terminal(self, label: str) -> None:
         value = next(v for l, v in TERMINALS if l == label)
         self.terminal.set(value)
-        self.settings["terminal"] = value
-        save_settings(self.settings)
+        self._remember("terminal", value)
 
     # --------------------------------------------------------------- scanning
 
@@ -540,8 +696,8 @@ class CCManagerGUI(tk.Tk):
         if meta is None:
             return
 
-        m = tk.Menu(self, tearoff=0, bg=PANEL, fg=TEXT,
-                    activebackground=SELECT, activeforeground="#ffffff",
+        m = tk.Menu(self, tearoff=0, bg=self.C["panel"], fg=self.C["text"],
+                    activebackground=self.C["select"], activeforeground="#ffffff",
                     bd=0, font=("Segoe UI", 9))
 
         already = self.is_open(meta) and not meta.is_background
@@ -563,8 +719,8 @@ class CCManagerGUI(tk.Tk):
                       command=lambda: self.launch(fork=True, mode="tab"))
         m.add_separator()
 
-        rc = tk.Menu(m, tearoff=0, bg=PANEL, fg=TEXT,
-                     activebackground=SELECT, activeforeground="#ffffff", bd=0)
+        rc = tk.Menu(m, tearoff=0, bg=self.C["panel"], fg=self.C["text"],
+                     activebackground=self.C["select"], activeforeground="#ffffff", bd=0)
         if meta.remote_control:
             rc.add_command(label="Connected — open on claude.ai",
                            command=lambda: webbrowser.open(meta.remote_url))

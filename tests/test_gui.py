@@ -82,6 +82,86 @@ def main() -> int:
         print("  --   wt.exe unavailable, tab mode fell back to conhost")
         check("fallback is conhost", tab[0], "conhost.exe")
 
+    print("\n[theme legibility]")
+    # Same idea as the chiptune tracker's audit-themes.py: a palette that looks
+    # right in isolation can still be unreadable in place, so check the real
+    # text-on-surface pairs rather than trusting the eye.
+    from cc_manager.gui import DEFAULT_THEME, THEMES, contrast
+
+    MIN_TEXT, MIN_DIM, MIN_STATE = 4.5, 3.0, 3.0
+    for name, t in THEMES.items():
+        worst_label, worst = "", 99.0
+        for fg in ("text", "muted"):
+            for bg in ("bg", "panel", "field", "select"):
+                r = contrast(t[fg], t[bg])
+                floor = MIN_TEXT if fg == "text" else MIN_DIM
+                if r < floor and r < worst:
+                    worst_label, worst = f"{fg} on {bg} = {r:.2f}", r
+        check(f"{name}: text readable on every surface", worst_label, "")
+
+        bad_states = [s for s in ("live", "crashed", "interrupted", "clean",
+                                  "parked", "opening")
+                      if contrast(t[s], t["bg"]) < MIN_STATE]
+        check(f"{name}: status colours visible", bad_states, [])
+
+        missing = [k for k in THEMES[DEFAULT_THEME] if k not in t]
+        check(f"{name}: palette complete", missing, [])
+
+    print("\n[settings persistence]")
+    import os as _o
+    import tempfile as _t
+
+    from cc_manager import gui as _gui
+
+    prev_cfg = _o.environ.get("CLAUDE_CONFIG_DIR")
+    cfgdir = Path(_t.mkdtemp(prefix="ccm-gui-cfg-"))
+    _o.environ["CLAUDE_CONFIG_DIR"] = str(cfgdir)
+    try:
+        _gui.save_settings({"theme": "matrix", "show_parked": True,
+                            "terminal": "isolated", "geometry": "1000x600+40+40"})
+        back = _gui.load_settings()
+        check("settings round-trip", back.get("theme"), "matrix")
+        check("show_parked persists", back.get("show_parked"), True)
+        check("terminal persists", back.get("terminal"), "isolated")
+
+        probe = _gui.CCManagerGUI()
+        try:
+            probe.update()
+            check("saved theme restored", probe.theme_name, "matrix")
+            check("saved terminal restored", probe.terminal.get(), "isolated")
+            check("saved show_parked restored", probe.show_parked.get(), True)
+
+            probe.show_parked.set(False)
+            probe.update()
+            check("toggling show_parked writes it",
+                  _gui.load_settings().get("show_parked"), False)
+
+            probe.apply_theme("synthwave")
+            probe.update()
+            check("theme change persists",
+                  _gui.load_settings().get("theme"), "synthwave")
+            check("palette actually swapped",
+                  probe.C["bg"], THEMES["synthwave"]["bg"])
+
+            probe._remember("geometry", "1234x567+10+20")
+            check("geometry stored", _gui.load_settings().get("geometry"),
+                  "1234x567+10+20")
+
+            # An off-screen position from a detached monitor must not strand it.
+            probe.settings["geometry"] = "1000x600+99999+99999"
+            check("off-screen position rejected",
+                  "+99999" in probe._restore_geometry(), False)
+            probe.settings["geometry"] = "garbage"
+            check("garbage geometry ignored", probe._restore_geometry(), "1180x680")
+        finally:
+            probe.destroy()
+    finally:
+        if prev_cfg is None:
+            _o.environ.pop("CLAUDE_CONFIG_DIR", None)
+        else:
+            _o.environ["CLAUDE_CONFIG_DIR"] = prev_cfg
+        __import__("shutil").rmtree(cfgdir, ignore_errors=True)
+
     print("\n[background sessions attach, not resume]")
     bg = SessionMeta(session_id="f872c1d3-1ce3-4435-a1c1-5428336ce2d0",
                      path=Path("x.jsonl"), project_dir="p", cwd=str(Path.home()),
