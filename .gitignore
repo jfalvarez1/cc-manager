@@ -4,3 +4,11 @@ __pycache__/
 .venv/
 venv/
 .pytest_cache/
+
+# PyInstaller output; rebuild with `python build_exe.py`
+build/
+dist/
+*.spec
+
+# scratch renders from make_icon.py
+_check*.png

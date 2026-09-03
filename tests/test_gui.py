@@ -270,6 +270,32 @@ def main() -> int:
         app.update()
         check_true("parked toggle changes the view", with_parked >= len(app.rows))
 
+        print("\n[ordering]")
+        # Most recent first, in the underlying list and in what the table
+        # actually shows after filtering.
+        acts = [s.last_activity for s in app.sessions if s.last_activity]
+        check("sessions sorted newest first", acts == sorted(acts, reverse=True), True)
+
+        shown = [m.last_activity for m in app.rows if m.last_activity]
+        check("displayed rows newest first", shown == sorted(shown, reverse=True), True)
+
+        table_order = [app.rows[int(i)].session_id for i in app.tree.get_children()]
+        check("table matches the row order",
+              table_order, [m.session_id for m in app.rows])
+
+        if len(app.rows) > 1:
+            check_true("the top row is the most recent",
+                       app.rows[0].last_activity >= app.rows[-1].last_activity)
+
+        # Ordering must survive filtering and a project switch.
+        app.search_var.set("a")
+        app.update()
+        filtered = [m.last_activity for m in app.rows if m.last_activity]
+        check("order holds while searching",
+              filtered == sorted(filtered, reverse=True), True)
+        app.search_var.set("")
+        app.update()
+
         print("\n[double-open guard]")
         target = app.rows[0]
         was_live = target.is_live

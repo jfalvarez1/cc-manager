@@ -9,7 +9,9 @@ Built on tkinter so it runs on a stock Python with nothing to install.
 from __future__ import annotations
 
 import json
+import os
 import queue
+import sys
 import threading
 import tkinter as tk
 from pathlib import Path
@@ -64,6 +66,38 @@ OPENING_GRACE_SECONDS = 90
 AUTO_REFRESH_MS = 20_000
 
 
+def icon_path() -> Path | None:
+    """The .ico, whether running from source or from a PyInstaller bundle."""
+    roots = [Path(__file__).resolve().parent.parent]
+    bundled = getattr(sys, "_MEIPASS", None)
+    if bundled:
+        roots.insert(0, Path(bundled))
+    for root in roots:
+        candidate = root / "cc_manager.ico"
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def claim_taskbar_identity() -> None:
+    """Tell Windows this is its own application.
+
+    Without an explicit AppUserModelID every process started by python.exe /
+    pythonw.exe shares the interpreter's identity, so the taskbar groups
+    unrelated Python apps under one generic Python icon and pinning pins the
+    interpreter rather than this app. Harmless everywhere else.
+    """
+    if os.name != "nt":
+        return
+    try:
+        import ctypes
+
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+            "alice.cc-manager.sessions")
+    except Exception:
+        pass
+
+
 def _settings_file() -> Path:
     return state_dir() / "gui.json"
 
@@ -89,6 +123,13 @@ class CCManagerGUI(tk.Tk):
         self.geometry("1180x680")
         self.minsize(900, 480)
         self.configure(bg=BG)
+
+        ico = icon_path()
+        if ico:
+            try:
+                self.iconbitmap(default=str(ico))
+            except tk.TclError:
+                pass
 
         self.settings = load_settings()
         self.sessions: list[SessionMeta] = []
@@ -620,6 +661,7 @@ class CCManagerGUI(tk.Tk):
 
 
 def main() -> int:
+    claim_taskbar_identity()   # must precede the first window
     CCManagerGUI().mainloop()
     return 0
 
