@@ -217,8 +217,12 @@ class CCManagerGUI(tk.Tk):
         self.project = self.settings.get("project") or None
         self.animated = tk.BooleanVar(value=self.settings.get("animated", True))
         self.animated.trace_add("write", lambda *_: self._toggle_animation())
+        # Default to hiding rather than quitting: this is a thing you keep
+        # around and glance at, so the X should park it in the tray. The
+        # toolbar checkbox turns that off, and the tray menu's Quit always
+        # really exits.
         self.close_to_tray = tk.BooleanVar(
-            value=self.settings.get("close_to_tray", False))
+            value=self.settings.get("close_to_tray", True))
         self.close_to_tray.trace_add("write", lambda *_: self._remember(
             "close_to_tray", self.close_to_tray.get()))
         self._tray = Tray(self, icon_path(), on_show=self.restore_from_tray,
