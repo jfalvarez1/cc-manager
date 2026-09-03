@@ -1,7 +1,7 @@
 # cc-manager
 
-A dashboard for the Claude Code sessions on your machine — browse them, search
-them, see which are still running, and reopen one in a terminal with a
+A Windows dashboard for the Claude Code sessions on your machine — browse them,
+search them, see which are still running, and reopen one in a terminal with a
 double-click.
 
 Claude Code writes every session to `~/.claude/projects/<encoded-cwd>/<id>.jsonl`.
@@ -11,6 +11,16 @@ actually navigate.
 ![Midnight theme](docs/midnight.png)
 
 There are three ways in: a desktop app, a terminal UI, and plain CLI output.
+
+> **Windows.** This is built for Windows and that is where it is tested.
+> Opening sessions goes through Windows Terminal, `conhost` or PowerShell;
+> the tray icon, the taskbar identity and the packaged `.exe` are all
+> Windows-specific, and liveness is resolved with `tasklist`.
+>
+> The parts that only read transcripts — the parser, the scanner, `--list`,
+> `--json`, `--tail`, `--doctor` and the terminal UI — have no Windows
+> dependency and there is a POSIX path for process liveness, so those should
+> work on macOS and Linux. Nobody has tested it there. Patches welcome.
 
 ---
 
@@ -380,4 +390,9 @@ cc_manager/
 make_icon.py         draws the app icon (multi-resolution .ico)
 build_exe.py         builds CCManager.exe
 tools/capture_themes.py   regenerates the screenshots above
+tools/demo_store.py       the synthetic sessions they are taken against
 ```
+
+## Licence
+
+MIT — see [LICENSE](LICENSE). Use it for anything, including commercially.
